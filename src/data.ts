@@ -37,6 +37,13 @@ export class WorkspaceManager {
   private findUpCache = new Map<string, WorkspaceInfo>()
   private positionDataMap = new Map<string, WorkspacePositionData>()
 
+  async isCatalogPackage(doc: TextDocument, name: string): Promise<boolean> {
+    const manager = doc.uri.fsPath.endsWith('.json') ? 'bun' : doc.uri.fsPath.endsWith('.yarnrc.yml') ? 'yarn' : 'pnpm'
+    const data = await this.readWorkspace(doc, manager)
+    return Object.hasOwn(data.catalog ?? {}, name)
+      || Object.values(data.catalogs ?? {}).some(catalog => Object.hasOwn(catalog, name))
+  }
+
   async resolveCatalog(doc: TextDocument, name: string, catalog: string) {
     const workspaceInfo = await this.findWorkspace(doc.uri)
     if (!workspaceInfo) {

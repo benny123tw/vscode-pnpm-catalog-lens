@@ -7,12 +7,13 @@ import { parseSync } from '@babel/core'
 import preset from '@babel/preset-typescript'
 import traverse from '@babel/traverse'
 import { computed, defineExtension, executeCommand, shallowRef, toValue as track, useActiveTextEditor, useCommand, useDisposable, useDocumentText, useEditorDecorations, watchEffect } from 'reactive-vscode'
-import { ConfigurationTarget, languages, MarkdownString, Position, Range, Uri, window, workspace } from 'vscode'
+import { ConfigurationTarget, Hover, l10n, languages, MarkdownString, Position, Range, Uri, window, workspace } from 'vscode'
 import { config, enabled, hover, namedCatalogsColors, namedCatalogsColorsSalt, namedCatalogsLabel } from './config'
 import { catalogPrefix, PACKAGE_MANAGERS_NAME } from './constants'
 import { WorkspaceManager } from './data'
 import { commands } from './generated/meta'
-import { getCatalogColor, getNodeRange, logger } from './utils'
+import { fetchPackageInfo } from './packageInfo'
+import { fromNow, getCatalogColor, getNodeRange, logger, removeQuotes } from './utils'
 
 const { activate, deactivate } = defineExtension(() => {
   const manager = new WorkspaceManager()
@@ -265,6 +266,67 @@ const { activate, deactivate } = defineExtension(() => {
         return definition
       },
     }),
+  )
+
+  useDisposable(
+    languages.registerHoverProvider(
+      [{ pattern: '**/pnpm-workspace.yaml' }, { pattern: '**/.yarnrc.yml' }],
+      {
+        async provideHover(document, position) {
+          if (!hover())
+            return
+
+          const line = document.lineAt(position.line).text
+          const colonIndex = line.indexOf(':')
+          if (colonIndex === -1)
+            return
+
+          const depName = removeQuotes(line.substring(0, colonIndex))
+          if (!depName)
+            return
+
+          const isCatalog = await manager.isCatalogPackage(document, depName)
+          if (!isCatalog)
+            return
+
+          const depVersion = removeQuotes(line.substring(colonIndex + 1))
+          const startPosition = new Position(position.line, line.indexOf(depName))
+          const endPosition = new Position(
+            position.line,
+            depVersion ? line.indexOf(depVersion, colonIndex) + depVersion.length : colonIndex,
+          )
+          const range = new Range(startPosition, endPosition)
+
+          const workspaceFolders = workspace.workspaceFolders
+          const cwd = workspaceFolders?.[0]?.uri.fsPath
+
+          const info = await fetchPackageInfo(depName, cwd)
+          if (!info)
+            return
+
+          const str = new MarkdownString()
+
+          if (info.description)
+            str.appendText(info.description)
+
+          if (info.version) {
+            str.appendText('\n\n')
+            str.appendText(
+              info.time
+                ? l10n.t('Latest version: {0} published {1}', info.version, fromNow(Date.parse(info.time), true, true))
+                : l10n.t('Latest version: {0}', info.version),
+            )
+          }
+
+          if (info.homepage) {
+            str.appendText('\n\n')
+            str.appendText(info.homepage)
+          }
+
+          return new Hover(str, range)
+        },
+      },
+    ),
   )
 })
 
