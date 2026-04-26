@@ -291,14 +291,6 @@ export class WorkspaceManager {
     }
 
     const code = doc.getText()
-
-    // Skip the babel parse on package.json files that can't define catalogs.
-    // Hover registers on '**/package.json' so this fires on every sub-package.
-    if (!/"catalogs?"\s*:/.test(code)) {
-      this.positionDataMap.set(doc.uri.fsPath, data)
-      return data
-    }
-
     const prefix = 'const x = '
     const offset = -prefix.length
     const combined = prefix + code
