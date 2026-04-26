@@ -276,17 +276,17 @@ const { activate, deactivate } = defineExtension(() => {
         { pattern: '**/package.json' },
       ],
       {
-        async provideHover(document, position) {
+        async provideHover(document, position, token) {
           if (!hover())
             return
 
           const entry = await manager.findCatalogEntryAtLine(document, position.line)
-          if (!entry)
+          if (!entry || token.isCancellationRequested)
             return
 
-          const cwd = workspace.workspaceFolders?.[0]?.uri.fsPath
+          const cwd = workspace.getWorkspaceFolder(document.uri)?.uri.fsPath
           const info = await fetchPackageInfo(entry.name, cwd)
-          if (!info)
+          if (!info || token.isCancellationRequested)
             return
 
           const str = new MarkdownString()

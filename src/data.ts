@@ -37,13 +37,6 @@ export class WorkspaceManager {
   private findUpCache = new Map<string, WorkspaceInfo>()
   private positionDataMap = new Map<string, WorkspacePositionData>()
 
-  async isCatalogPackage(doc: TextDocument, name: string): Promise<boolean> {
-    const manager = doc.uri.fsPath.endsWith('.json') ? 'bun' : doc.uri.fsPath.endsWith('.yarnrc.yml') ? 'yarn' : 'pnpm'
-    const data = await this.readWorkspace(doc, manager)
-    return Object.hasOwn(data.catalog ?? {}, name)
-      || Object.values(data.catalogs ?? {}).some(catalog => Object.hasOwn(catalog, name))
-  }
-
   async findCatalogEntryAtLine(
     doc: TextDocument,
     zeroBasedLine: number,
@@ -52,10 +45,6 @@ export class WorkspaceManager {
     if (!positionData)
       return null
 
-    // For package.json, the file pattern is broad (**/package.json), so this
-    // method runs on every package.json the user hovers in. A sub-package or
-    // non-monorepo file has no catalog/catalogs entries, so the position map
-    // is empty — short-circuit there.
     const hasEntries = Object.keys(positionData.catalog).length > 0
       || Object.values(positionData.catalogs).some(m => Object.keys(m).length > 0)
     if (!hasEntries)
@@ -224,10 +213,18 @@ export class WorkspaceManager {
       return this.positionDataMap.get(doc.uri.fsPath)!
     }
 
-    if (doc.uri.fsPath.endsWith('.json'))
-      return this.readJsonWorkspacePosition(doc)
-    else
-      return this.readYamlWorkspacePosition(doc)
+    const data = doc.uri.fsPath.endsWith('.json')
+      ? this.readJsonWorkspacePosition(doc)
+      : this.readYamlWorkspacePosition(doc)
+
+    const disposable = workspace.onDidChangeTextDocument((e) => {
+      if (e.document.uri.fsPath === doc.uri.fsPath) {
+        this.positionDataMap.delete(doc.uri.fsPath)
+        disposable.dispose()
+      }
+    })
+
+    return data
   }
 
   private readYamlWorkspacePosition(doc: TextDocument) {
@@ -294,6 +291,14 @@ export class WorkspaceManager {
     }
 
     const code = doc.getText()
+
+    // Skip the babel parse on package.json files that can't define catalogs.
+    // Hover registers on '**/package.json' so this fires on every sub-package.
+    if (!/"catalogs?"\s*:/.test(code)) {
+      this.positionDataMap.set(doc.uri.fsPath, data)
+      return data
+    }
+
     const prefix = 'const x = '
     const offset = -prefix.length
     const combined = prefix + code

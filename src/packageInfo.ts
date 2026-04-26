@@ -1,5 +1,6 @@
 import pacote from 'pacote'
 import { workspace } from 'vscode'
+import { logger } from './utils'
 
 export interface PackageInfo {
   description?: string
@@ -8,13 +9,6 @@ export interface PackageInfo {
   homepage?: string
 }
 
-/**
- * Fetch package metadata from npm registry using pacote.
- * Pacote reads .npmrc and respects the configured registry automatically.
- *
- * @param name - package name to look up
- * @param cwd - working directory for registry/config resolution (e.g. workspace folder)
- */
 export async function fetchPackageInfo(name: string, cwd?: string): Promise<PackageInfo | undefined> {
   if (!isValidPackageName(name))
     return undefined
@@ -25,7 +19,6 @@ export async function fetchPackageInfo(name: string, cwd?: string): Promise<Pack
   try {
     const pack = await pacote.packument(name, {
       fullMetadata: true,
-      preferOnline: true,
       ...(cwd ? { cwd } : {}),
     })
 
@@ -42,7 +35,8 @@ export async function fetchPackageInfo(name: string, cwd?: string): Promise<Pack
       homepage: manifest?.homepage,
     }
   }
-  catch {
+  catch (err) {
+    logger.error(`fetchPackageInfo failed for ${name}:`, err)
     return undefined
   }
 }

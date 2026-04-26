@@ -35,10 +35,6 @@ function hslToHex(h: number, s: number, l: number) {
   return `#${r.toString(16).padStart(2, '0').slice(0, 2)}${g.toString(16).padStart(2, '0').slice(0, 2)}${b.toString(16).padStart(2, '0').slice(0, 2)}`
 }
 
-export function removeQuotes(text: string): string {
-  return text.replace(/['"]/g, '').trim()
-}
-
 const minute = 60
 const hour = minute * 60
 const day = hour * 24
