@@ -13,7 +13,7 @@ import { catalogPrefix, PACKAGE_MANAGERS_NAME } from './constants'
 import { WorkspaceManager } from './data'
 import { commands } from './generated/meta'
 import { fetchPackageInfo } from './packageInfo'
-import { fromNow, getCatalogColor, getNodeRange, logger, removeQuotes } from './utils'
+import { fromNow, getCatalogColor, getNodeRange, logger } from './utils'
 
 const { activate, deactivate } = defineExtension(() => {
   const manager = new WorkspaceManager()
@@ -270,37 +270,22 @@ const { activate, deactivate } = defineExtension(() => {
 
   useDisposable(
     languages.registerHoverProvider(
-      [{ pattern: '**/pnpm-workspace.yaml' }, { pattern: '**/.yarnrc.yml' }],
+      [
+        { pattern: '**/pnpm-workspace.yaml' },
+        { pattern: '**/.yarnrc.yml' },
+        { pattern: '**/package.json' },
+      ],
       {
         async provideHover(document, position) {
           if (!hover())
             return
 
-          const line = document.lineAt(position.line).text
-          const colonIndex = line.indexOf(':')
-          if (colonIndex === -1)
+          const entry = await manager.findCatalogEntryAtLine(document, position.line)
+          if (!entry)
             return
 
-          const depName = removeQuotes(line.substring(0, colonIndex))
-          if (!depName)
-            return
-
-          const isCatalog = await manager.isCatalogPackage(document, depName)
-          if (!isCatalog)
-            return
-
-          const depVersion = removeQuotes(line.substring(colonIndex + 1))
-          const startPosition = new Position(position.line, line.indexOf(depName))
-          const endPosition = new Position(
-            position.line,
-            depVersion ? line.indexOf(depVersion, colonIndex) + depVersion.length : colonIndex,
-          )
-          const range = new Range(startPosition, endPosition)
-
-          const workspaceFolders = workspace.workspaceFolders
-          const cwd = workspaceFolders?.[0]?.uri.fsPath
-
-          const info = await fetchPackageInfo(depName, cwd)
+          const cwd = workspace.workspaceFolders?.[0]?.uri.fsPath
+          const info = await fetchPackageInfo(entry.name, cwd)
           if (!info)
             return
 
@@ -323,7 +308,7 @@ const { activate, deactivate } = defineExtension(() => {
             str.appendText(info.homepage)
           }
 
-          return new Hover(str, range)
+          return new Hover(str, entry.range)
         },
       },
     ),

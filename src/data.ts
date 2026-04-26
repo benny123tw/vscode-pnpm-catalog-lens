@@ -44,6 +44,52 @@ export class WorkspaceManager {
       || Object.values(data.catalogs ?? {}).some(catalog => Object.hasOwn(catalog, name))
   }
 
+  async findCatalogEntryAtLine(
+    doc: TextDocument,
+    zeroBasedLine: number,
+  ): Promise<{ name: string, range: Range } | null> {
+    const positionData = this.readWorkspacePosition(doc)
+    if (!positionData)
+      return null
+
+    // For package.json, the file pattern is broad (**/package.json), so this
+    // method runs on every package.json the user hovers in. A sub-package or
+    // non-monorepo file has no catalog/catalogs entries, so the position map
+    // is empty — short-circuit there.
+    const hasEntries = Object.keys(positionData.catalog).length > 0
+      || Object.values(positionData.catalogs).some(m => Object.keys(m).length > 0)
+    if (!hasEntries)
+      return null
+
+    const targetLine = zeroBasedLine + 1 // AST positions are 1-indexed
+
+    const findInMap = (map: Record<string, [AST.Position, AST.Position]>) => {
+      for (const [name, [start, end]] of Object.entries(map)) {
+        if (start.line !== targetLine)
+          continue
+        const lineText = doc.lineAt(start.line - 1).text
+        const keyStart = Math.max(lineText.search(/\S/), 0)
+        return {
+          name,
+          range: new Range(start.line - 1, keyStart, end.line - 1, end.column),
+        }
+      }
+      return null
+    }
+
+    const found = findInMap(positionData.catalog)
+    if (found)
+      return found
+
+    for (const map of Object.values(positionData.catalogs)) {
+      const f = findInMap(map)
+      if (f)
+        return f
+    }
+
+    return null
+  }
+
   async resolveCatalog(doc: TextDocument, name: string, catalog: string) {
     const workspaceInfo = await this.findWorkspace(doc.uri)
     if (!workspaceInfo) {
